@@ -1,0 +1,14 @@
+[
+    {
+        "Opiskelija": "Testi Käyttäjä",
+        "coursename": "Testikurssi",
+        "email": "mailto:testi.kayttaja@edu.koulutusorganisaatio.fi",
+        "sessions": [
+            {
+                "end": "2020-03-15T13:45Z",
+                "start": "2020-03-15T13:30Z"
+            }
+        ],
+        "tehtava": "Se, jonka nimeä ei mainita"
+    }
+]

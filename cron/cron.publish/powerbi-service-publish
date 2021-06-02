@@ -1,0 +1,98 @@
+#!/bin/bash
+#  This file is part of oppikoppi.
+#  Copyright (C) 2021 Anssi Gröhn
+
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+#  This script runs command that configures powerbi services and publishes HTML file to publishdir
+prevPWD=$PWD
+LOGDIR=/var/log/oppikoppi
+logger Running $0
+cd /path/to/oppikoppi-robot
+courses=""
+datadir="/path/to/powerbi-data"
+MAX_ATTEMPTS=3
+
+
+
+# Update only single course, if specified
+if [ ! $# -eq 0 ]; then
+    courses=$1
+    echo "Updating only single course $courses"
+else
+    courses=`cat ${datadir}/active-courses.txt`    
+fi
+
+
+publishdir=/path/to/publish-dir
+mount ${publishdir}
+
+function HandlePermissions()
+{
+    course=$1
+    LOGFILE_PREFIX=log-permissions-FAIL-${course}-$(date +%Y-%m-%d)
+    attempt=0
+    success=0    
+    while [[ ${success} -eq 0 && ${attempt} -lt ${MAX_ATTEMPTS} ]]; do
+    
+	DISPLAY=:0.0 robot --exitonfailure --variable CourseId:${course} --exclude Publish --log ${LOGDIR}/${LOGFILE_PREFIX}.html --output ${LOGDIR}/log-permissions.xml --report NONE  powerbi-service-rs.robot 
+	if [ $? -eq 0 ]; then
+	    success=1
+	fi
+	attempt=`expr $attempt + 1`
+    done
+    
+    if [ ${success} -eq 0 ]; then
+	logger powerbi-service-permissions FAIL	${course}
+    else
+	logger powerbi-service-permissions SUCCESS	${course}
+	/bin/rm -f ${LOGDIR}/${LOGFILE_PREFIX}.html
+    fi
+}
+
+function HandlePublish()
+{
+    # publish file, do only if it does not exit
+    course=$1
+    if [ ! -f ${publishdir}/${course}.html ]; then
+	LOGFILE_PREFIX=log-publish-FAIL-${course}-$(date +%Y-%m-%d)
+	attempt=0
+	success=0
+	while [[ ${success} -eq 0 && ${attempt} -lt ${MAX_ATTEMPTS} ]]; do
+	    DISPLAY=:0.0 robot --exitonfailure --variable CourseId:${course} --exclude Permissions --log ${LOGDIR}/${LOGFILE_PREFIX}.html --output ${LOGDIR}/log-permissions.xml --report NONE powerbi-service-rs.robot
+	    if [ $? -eq 0 ]; then
+		success=1
+	    fi
+	    attempt=`expr $attempt + 1`
+	done
+	# Log end state
+	if [ ${success} -eq 0 ]; then
+	    logger powerbi-service-publish FAIL	${course}
+	else
+	    /path/to/oppikoppi-robot/helper-scripts/send-publish-email.sh ${course}
+    	    logger powerbi-service-publish SUCCESS	${course}
+	    /bin/rm -f ${LOGDIR}/${LOGFILE_PREFIX}.html
+	fi
+    fi
+}
+for course in ${courses}; do
+    HandlePermissions $course 
+done
+
+for course in ${courses}; do
+    HandlePublish $course 
+done
+
+umount ${publishdir}
+cd $prevPWD
